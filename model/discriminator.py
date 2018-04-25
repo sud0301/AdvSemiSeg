@@ -11,10 +11,14 @@ class FCDiscriminator(nn.Module):
         self.conv2 = nn.Conv2d(ndf, ndf*2, kernel_size=4, stride=2, padding=1)
         self.conv3 = nn.Conv2d(ndf*2, ndf*4, kernel_size=4, stride=2, padding=1)
         self.conv4 = nn.Conv2d(ndf*4, ndf*8, kernel_size=4, stride=2, padding=1)
-        self.classifier = nn.Conv2d(ndf*8, 1, kernel_size=4, stride=2, padding=1)
-        self.upsample = nn.UpsamplingBilinear2d(scale_factor=16)
+        #self.conv5 = nn.Conv2d(ndf*8, 1, kernel_size=4, stride=2, padding=1)
+        #self.classifier = nn.Sequential(
+        self.fc = nn.Linear(512, 1)
+        self.out = nn.Sigmoid()
+        #)
         self.leaky_relu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
-		#self.up_sample = nn.Upsample(scale_factor=32, mode='bilinear')
+        self.drop = nn.Dropout2d(0.5)
+        #self.up_sample = nn.Upsample(scale_factor=32, mode='bilinear')
 		#self.sigmoid = nn.Sigmoid()
 
 
@@ -25,11 +29,14 @@ class FCDiscriminator(nn.Module):
         x = self.leaky_relu(x)
         x = self.conv3(x)
         x = self.leaky_relu(x)
+        x = self.drop(x)
         x = self.conv4(x)
-        y = self.leaky_relu(x)
-        #y = self.upsample(x)
-        x = self.classifier(y)
-		#x = self.up_sample(x)
-		#x = self.sigmoid(x) 
-
-        return x, y
+        x = self.leaky_relu(x)
+        x = self.drop(x)
+        #x = self.conv5(x)
+        #x = self.leaky_relu(x)
+        y = x.mean(3).mean(2).squeeze()
+        #y = x.view(-1, 512)
+        z = self.fc(y)
+        z = self.out(z)
+        return z, y
