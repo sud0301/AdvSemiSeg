@@ -38,7 +38,7 @@ DATA_DIRECTORY = './dataset/VOC2012'
 DATA_LIST_PATH = './dataset/voc_list/train_aug.txt'
 IGNORE_LABEL = 255
 INPUT_SIZE = '321,321'
-LEARNING_RATE = 2e-5
+LEARNING_RATE = 5e-5
 MOMENTUM = 0.9
 NUM_CLASSES = 21
 NUM_STEPS = 20000
@@ -46,11 +46,11 @@ POWER = 0.9
 RANDOM_SEED = 1234
 RESTORE_FROM = 'http://vllab1.ucmerced.edu/~whung/adv-semi-seg/resnet101COCO-41f33a49.pth'
 SAVE_NUM_IMAGES = 2
-SAVE_PRED_EVERY = 500
+SAVE_PRED_EVERY = 100
 SNAPSHOT_DIR = './snapshots/default/'
 WEIGHT_DECAY = 0.0005
 
-LEARNING_RATE_D = 2e-5
+LEARNING_RATE_D = 5e-5
 LAMBDA_ADV_PRED = 0.1
 LAMBDA_FM = 1
 
@@ -303,7 +303,7 @@ def main():
     y_real_, y_fake_ = Variable(torch.ones(args.batch_size, 1).cuda()), Variable(torch.zeros(args.batch_size, 1).cuda())
 
 
-    for i_iter in range(1500, args.num_steps):
+    for i_iter in range(10501, args.num_steps):
 
         loss_seg_value = 0
         loss_adv_pred_value = 0
@@ -317,8 +317,9 @@ def main():
         optimizer_D.zero_grad()
         adjust_learning_rate_D(optimizer_D, i_iter)
 
-        for sub_i in range(args.iter_size):
+        #for sub_i in range(args.iter_size):
 
+        if i_iter%2==0:
             # train G
 
             # don't accumulate grads in D
@@ -340,6 +341,11 @@ def main():
 
             loss_seg = loss_calc(pred, labels, args.gpu)
             
+            loss_seg.backward()
+            loss_seg_value += loss_seg.data.cpu().numpy()[0]/args.iter_size
+       
+
+        else:
             #fm loss calc
             try:
                 batch = next(trainloader_all_iter)
@@ -365,13 +371,11 @@ def main():
              
             fm_loss = torch.mean(torch.abs(torch.mean(D_out_y_gt, 0) - torch.mean(D_out_y_pred, 0)))
             
-            loss = loss_seg + args.lambda_fm * fm_loss
+            #loss = loss_seg + args.lambda_fm * fm_loss
 
             # proper normalization
-            loss.backward()
-            loss_seg_value += loss_seg.data.cpu().numpy()[0]/args.iter_size
+            fm_loss.backward()
             loss_fm_value+= fm_loss.data.cpu().numpy()[0]/args.iter_size
-            loss_value += loss.data.cpu().numpy()[0]/args.iter_size
 
             # train D
 
@@ -406,8 +410,7 @@ def main():
         optimizer_D.step()
 
         print('exp = {}'.format(args.snapshot_dir))
-        print('iter = {0:8d}/{1:8d}, loss_seg = {2:.3f}, loss_D = {3:.3f}'.format(i_iter, args.num_steps, loss_seg_value, loss_D_value))
-        print ('fm_loss: ', loss_fm_value, ' g_loss: ', loss_value)
+        print('iter = {0:8d}/{1:8d}, loss_seg = {2:.3f}, loss_D = {3:.3f} , loss_fm = {4:.3f}'.format(i_iter, args.num_steps, loss_seg_value, loss_D_value, loss_fm_value))
 
         if i_iter >= args.num_steps-1:
             print ('save model ...')

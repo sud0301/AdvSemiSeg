@@ -38,21 +38,21 @@ DATA_DIRECTORY = './dataset/VOC2012'
 DATA_LIST_PATH = './dataset/voc_list/train_aug.txt'
 IGNORE_LABEL = 255
 INPUT_SIZE = '321,321'
-LEARNING_RATE = 2e-5
+LEARNING_RATE = 2.5e-4
 MOMENTUM = 0.9
 NUM_CLASSES = 21
-NUM_STEPS = 20000
+NUM_STEPS = 40000
 POWER = 0.9
 RANDOM_SEED = 1234
 RESTORE_FROM = 'http://vllab1.ucmerced.edu/~whung/adv-semi-seg/resnet101COCO-41f33a49.pth'
 SAVE_NUM_IMAGES = 2
-SAVE_PRED_EVERY = 500
+SAVE_PRED_EVERY = 100
 SNAPSHOT_DIR = './snapshots/default/'
 WEIGHT_DECAY = 0.0005
 
-LEARNING_RATE_D = 2e-5
+LEARNING_RATE_D = 1e-4
 LAMBDA_ADV_PRED = 0.1
-LAMBDA_FM = 1
+LAMBDA_FM = 0.1
 
 PARTIAL_DATA=0.5
 
@@ -238,10 +238,10 @@ def main():
 
     if args.partial_data is None:
         trainloader = data.DataLoader(train_dataset,
-                        batch_size=args.batch_size, shuffle=True, num_workers=16, pin_memory=True)
+                        batch_size=args.batch_size, shuffle=True, num_workers=5, pin_memory=True)
 
         trainloader_gt = data.DataLoader(train_gt_dataset,
-                        batch_size=args.batch_size, shuffle=True, num_workers=16, pin_memory=True)
+                        batch_size=args.batch_size, shuffle=True, num_workers=5, pin_memory=True)
     else:
         #sample partial data
         partial_size = int(args.partial_data * train_dataset_size)
@@ -256,23 +256,23 @@ def main():
         pickle.dump(train_ids, open(osp.join(args.snapshot_dir, 'train_id.pkl'), 'wb'))
         
         train_sampler_all = data.sampler.SubsetRandomSampler(train_ids)
-        train_gt_sampler_all = data.sampler.SubsetRandomSampler(train_ids)
+        #train_gt_sampler_all = data.sampler.SubsetRandomSampler(train_ids)
         train_sampler = data.sampler.SubsetRandomSampler(train_ids[:partial_size])
-        train_remain_sampler = data.sampler.SubsetRandomSampler(train_ids[partial_size:])
+        #train_remain_sampler = data.sampler.SubsetRandomSampler(train_ids[partial_size:])
         train_gt_sampler = data.sampler.SubsetRandomSampler(train_ids[:partial_size])
 
         trainloader_all = data.DataLoader(train_dataset,
-                        batch_size=args.batch_size, sampler=train_sampler_all, num_workers=16, pin_memory=True)
-        trainloader_gt_all = data.DataLoader(train_gt_dataset,
-                        batch_size=args.batch_size, sampler=train_gt_sampler_all, num_workers=16, pin_memory=True)
+                        batch_size=args.batch_size, sampler=train_sampler_all, num_workers=3, pin_memory=True)
+        #trainloader_gt_all = data.DataLoader(train_gt_dataset,
+                        #batch_size=args.batch_size, sampler=train_gt_sampler_all, num_workers=16, pin_memory=True)
         trainloader = data.DataLoader(train_dataset,
-                        batch_size=args.batch_size, sampler=train_sampler, num_workers=16, pin_memory=True)
-        trainloader_remain = data.DataLoader(train_dataset,
-                        batch_size=args.batch_size, sampler=train_remain_sampler, num_workers=16, pin_memory=True)
+                        batch_size=args.batch_size, sampler=train_sampler, num_workers=3, pin_memory=True)
+        #trainloader_remain = data.DataLoader(train_dataset,
+                        #batch_size=args.batch_size, sampler=train_remain_sampler, num_workers=16, pin_memory=True)
         trainloader_gt = data.DataLoader(train_gt_dataset,
-                        batch_size=args.batch_size, sampler=train_gt_sampler, num_workers=16, pin_memory=True)
+                        batch_size=args.batch_size, sampler=train_gt_sampler, num_workers=3, pin_memory=True)
 
-        trainloader_remain_iter = iter(trainloader_remain)
+        #trainloader_remain_iter = iter(trainloader_remain)
 
 
     trainloader_all_iter = iter(trainloader_all)
@@ -303,7 +303,7 @@ def main():
     y_real_, y_fake_ = Variable(torch.ones(args.batch_size, 1).cuda()), Variable(torch.zeros(args.batch_size, 1).cuda())
 
 
-    for i_iter in range(1500, args.num_steps):
+    for i_iter in range(20001, args.num_steps):
 
         loss_seg_value = 0
         loss_adv_pred_value = 0
@@ -317,8 +317,9 @@ def main():
         optimizer_D.zero_grad()
         adjust_learning_rate_D(optimizer_D, i_iter)
 
-        for sub_i in range(args.iter_size):
+        #for sub_i in range(args.iter_size):
 
+        if i_iter != 0:
             # train G
 
             # don't accumulate grads in D
@@ -327,49 +328,62 @@ def main():
 
             # train with source
             
+            #batch_l = next(trainloader_iter)
+
             try:
-                batch = next(trainloader_iter)
+                batch_l = next(trainloader_iter)
             except:
                 trainloader_iter = iter(trainloader)
-                batch = next(trainloader_iter)
-
-            images, labels, _, _ = batch
+                batch_l = next(trainloader_iter)           
+ 
+            images, labels, _, _ = batch_l
             images = Variable(images).cuda(args.gpu)
-            #ignore_mask = (labels.numpy() == 255)
-            pred = interp(model(images))
+            pred_l = interp(model(images))
 
-            loss_seg = loss_calc(pred, labels, args.gpu)
+            loss_seg = loss_calc(pred_l, labels, args.gpu)
+           
+            if i_iter <= 500:
+                loss_seg.backward()
+            loss_seg_value += loss_seg.data.cpu().numpy()[0]/args.iter_size
+
+        if i_iter > 500: 
+            optimizer.param_groups[0]['lr'] = 2.5e-5
+            optimizer_D.param_groups[0]['lr'] = 1e-5
             
             #fm loss calc
-            try:
-                batch = next(trainloader_all_iter)
-            except:
-                trainloader_iter = iter(trainloader_all)
-                batch = next(trainloader_all_iter)
+            #batch_all = next(trainloader_all_iter)
             
-            images, labels, _, _ = batch
+            try:
+                batch_all = next(trainloader_all_iter)
+            except:
+                trainloader_all_iter = iter(trainloader_all)
+                batch_all = next(trainloader_all_iter)
+            
+            images, _, _, _ = batch_all
             images = Variable(images).cuda(args.gpu)
-            #ignore_mask = (labels.numpy() == 255)
             pred = interp(model(images))
             
+            #output of modelD for predictions
             _, D_out_y_pred = model_D(F.softmax(pred))
             
-            trainloader_gt_iter = iter(trainloader_gt)
-            batch = next(trainloader_gt_iter)
-
-            _, labels_gt, _, _ = batch
-            D_gt_v = Variable(one_hot(labels_gt)).cuda(args.gpu)
-            #ignore_mask_gt = (labels_gt.numpy() == 255)
+            #output of modelD for ground truth
+            #batch_gt = next(trainloader_gt_iter)
+            try:
+                batch_gt = next(trainloader_gt_iter)
+            except:
+                trainloader_gt_iter = iter(trainloader_gt)
+                batch_gt = next(trainloader_gt_iter) 
             
+            _, labels_gt, _, _ = batch_gt
+            D_gt_v = Variable(one_hot(labels_gt)).cuda(args.gpu)
             _ , D_out_y_gt = model_D(D_gt_v)
              
             fm_loss = torch.mean(torch.abs(torch.mean(D_out_y_gt, 0) - torch.mean(D_out_y_pred, 0)))
             
-            loss = loss_seg + args.lambda_fm * fm_loss
+            loss = loss_seg + fm_loss
 
             # proper normalization
             loss.backward()
-            loss_seg_value += loss_seg.data.cpu().numpy()[0]/args.iter_size
             loss_fm_value+= fm_loss.data.cpu().numpy()[0]/args.iter_size
             loss_value += loss.data.cpu().numpy()[0]/args.iter_size
 
@@ -381,23 +395,15 @@ def main():
 
             # train with pred
             pred = pred.detach()
-
             D_out_z, _ = model_D(F.softmax(pred))
             y_fake_ = Variable(torch.zeros(D_out_z.size(0), 1).cuda())
             loss_D_fake = criterion(D_out_z, y_fake_) 
 
-            # train with gt
-            # get gt labels
-            _, labels_gt, _, _ = batch
             D_gt_v = Variable(one_hot(labels_gt)).cuda(args.gpu)
-            #ignore_mask_gt = (labels_gt.numpy() == 255)
-
             D_out_z_gt, _ = model_D(D_gt_v)
-            #D_out = interp(D_out_x)    
-       
             y_real_ = Variable(torch.ones(D_out_z_gt.size(0), 1).cuda()) 
-            
             loss_D_real = criterion(D_out_z_gt, y_real_)
+            
             loss_D = loss_D_fake + loss_D_real
             loss_D.backward()
             loss_D_value += loss_D.data.cpu().numpy()[0]
@@ -406,8 +412,8 @@ def main():
         optimizer_D.step()
 
         print('exp = {}'.format(args.snapshot_dir))
-        print('iter = {0:8d}/{1:8d}, loss_seg = {2:.3f}, loss_D = {3:.3f}'.format(i_iter, args.num_steps, loss_seg_value, loss_D_value))
-        print ('fm_loss: ', loss_fm_value, ' g_loss: ', loss_value)
+        print('iter = {0:8d}/{1:8d}, loss_seg = {2:.3f}, loss_D = {3:.3f}, fm_loss = {4:.3f}, loss_g = {5:.3f}'.format(i_iter, args.num_steps, loss_seg_value, loss_D_value, loss_fm_value, loss_value))
+        #print ('fm_loss: ', loss_fm_value, ' g_loss: ', loss_value)
 
         if i_iter >= args.num_steps-1:
             print ('save model ...')

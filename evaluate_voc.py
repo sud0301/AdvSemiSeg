@@ -219,11 +219,11 @@ def main():
 
         output = output.transpose(1,2,0)
         output = np.asarray(np.argmax(output, axis=2), dtype=np.int)
-        
+        '''
         filename = os.path.join(args.save_dir, '{}.png'.format(name[0]))
         color_file = Image.fromarray(colorize(output).transpose(1, 2, 0), 'RGB')
         color_file.save(filename)
-
+        '''
         # show_all(gt, output)
         data_list.append([gt.flatten(), output.flatten()])
 

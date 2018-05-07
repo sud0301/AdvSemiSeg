@@ -16,7 +16,7 @@ import os.path as osp
 import pickle
 
 from model.deeplab import Res_Deeplab
-from model.discriminator import FCDiscriminator
+from model.discriminator_8 import FCDiscriminator
 from utils.loss import CrossEntropy2d, BCEWithLogitsLoss2d
 from dataset.voc_dataset import VOCDataSet, VOCGTDataSet
 
@@ -38,7 +38,7 @@ DATA_DIRECTORY = './dataset/VOC2012'
 DATA_LIST_PATH = './dataset/voc_list/train_aug.txt'
 IGNORE_LABEL = 255
 INPUT_SIZE = '321,321'
-LEARNING_RATE = 2e-5
+LEARNING_RATE = 1e-4
 MOMENTUM = 0.9
 NUM_CLASSES = 21
 NUM_STEPS = 20000
@@ -50,7 +50,7 @@ SAVE_PRED_EVERY = 500
 SNAPSHOT_DIR = './snapshots/default/'
 WEIGHT_DECAY = 0.0005
 
-LEARNING_RATE_D = 2e-5
+LEARNING_RATE_D = 1e-4
 LAMBDA_ADV_PRED = 0.1
 LAMBDA_FM = 1
 
@@ -303,7 +303,7 @@ def main():
     y_real_, y_fake_ = Variable(torch.ones(args.batch_size, 1).cuda()), Variable(torch.zeros(args.batch_size, 1).cuda())
 
 
-    for i_iter in range(1500, args.num_steps):
+    for i_iter in range(args.num_steps):
 
         loss_seg_value = 0
         loss_adv_pred_value = 0
@@ -400,7 +400,7 @@ def main():
             loss_D_real = criterion(D_out_z_gt, y_real_)
             loss_D = loss_D_fake + loss_D_real
             loss_D.backward()
-            loss_D_value += loss_D.data.cpu().numpy()[0]
+            loss_D_value += loss_D.data.cpu().numpy()[0]/args.iter_size
 
         optimizer.step()
         optimizer_D.step()

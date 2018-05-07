@@ -66,7 +66,7 @@ class FCDiscriminator(nn.Module):
         )
         '''
         self.conv1 = nn.Conv2d(num_classes, ndf, kernel_size=4, stride=2, padding=1)
-        self.conv2 = nn.Conv2d(  ndf, ndf*2, kernel_size=4, stride=2, padding=1)
+        self.conv2 = nn.Conv2d(ndf, ndf*2, kernel_size=4, stride=2, padding=1)
         self.conv3 = nn.Conv2d(ndf*2, ndf*4, kernel_size=4, stride=2, padding=1)
         self.conv4 = nn.Conv2d(ndf*4, ndf*8, kernel_size=4, stride=2, padding=1)
         #self.conv5 = nn.Conv2d(ndf*8, 1, kernel_size=4, stride=2, padding=1)
@@ -84,10 +84,8 @@ class FCDiscriminator(nn.Module):
         
         x = self.conv1(x)
         x = self.leaky_relu(x)
-        x = self.drop(x)
         x = self.conv2(x)
         x = self.leaky_relu(x)
-        x = self.drop(x)
         x = self.conv3(x)
         x = self.leaky_relu(x)
         x = self.drop(x)

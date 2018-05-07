@@ -303,12 +303,11 @@ def main():
     y_real_, y_fake_ = Variable(torch.ones(args.batch_size, 1).cuda()), Variable(torch.zeros(args.batch_size, 1).cuda())
 
 
-    for i_iter in range(1500, args.num_steps):
+    for i_iter in range(args.num_steps):
 
         loss_seg_value = 0
         loss_adv_pred_value = 0
         loss_D_value = 0
-        loss_semi_value = 0
         loss_fm_value = 0
         loss_value = 0
 
@@ -364,7 +363,6 @@ def main():
             _ , D_out_y_gt = model_D(D_gt_v)
              
             fm_loss = torch.mean(torch.abs(torch.mean(D_out_y_gt, 0) - torch.mean(D_out_y_pred, 0)))
-            
             loss = loss_seg + args.lambda_fm * fm_loss
 
             # proper normalization
@@ -393,11 +391,9 @@ def main():
             #ignore_mask_gt = (labels_gt.numpy() == 255)
 
             D_out_z_gt, _ = model_D(D_gt_v)
-            #D_out = interp(D_out_x)    
-       
             y_real_ = Variable(torch.ones(D_out_z_gt.size(0), 1).cuda()) 
-            
             loss_D_real = criterion(D_out_z_gt, y_real_)
+            
             loss_D = loss_D_fake + loss_D_real
             loss_D.backward()
             loss_D_value += loss_D.data.cpu().numpy()[0]

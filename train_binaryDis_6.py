@@ -31,14 +31,14 @@ start = timeit.default_timer()
 IMG_MEAN = np.array((104.00698793,116.66876762,122.67891434), dtype=np.float32)
 
 MODEL = 'DeepLab'
-BATCH_SIZE = 6
+BATCH_SIZE = 5
 ITER_SIZE = 1
 NUM_WORKERS = 4
 DATA_DIRECTORY = './dataset/VOC2012'
 DATA_LIST_PATH = './dataset/voc_list/train_aug.txt'
 IGNORE_LABEL = 255
 INPUT_SIZE = '321,321'
-LEARNING_RATE = 2e-5
+LEARNING_RATE = 5e-5
 MOMENTUM = 0.9
 NUM_CLASSES = 21
 NUM_STEPS = 20000
@@ -50,13 +50,13 @@ SAVE_PRED_EVERY = 500
 SNAPSHOT_DIR = './snapshots/default/'
 WEIGHT_DECAY = 0.0005
 
-LEARNING_RATE_D = 2e-5
+LEARNING_RATE_D = 5e-5
 LAMBDA_ADV_PRED = 0.1
 LAMBDA_FM = 1
 
 PARTIAL_DATA=0.5
 
-SEMI_START=2000
+ADV_START= 500
 LAMBDA_SEMI=0.1
 MASK_T=0.2
 
@@ -102,8 +102,8 @@ def get_arguments():
                         help="lambda_semi for adversarial training.")
     parser.add_argument("--mask-T", type=float, default=MASK_T,
                         help="mask T for semi adversarial training.")
-    parser.add_argument("--semi-start", type=int, default=SEMI_START,
-                        help="start semi learning after # iterations")
+    parser.add_argument("--adv-start", type=int, default=ADV_START,
+                        help="start adversarial learning after # iterations")
     parser.add_argument("--momentum", type=float, default=MOMENTUM,
                         help="Momentum component of the optimiser.")
     parser.add_argument("--not-restore-last", action="store_true",
@@ -300,15 +300,14 @@ def main():
     pred_label = 0
     gt_label = 1
 
-    y_real_, y_fake_ = Variable(torch.ones(args.batch_size, 1).cuda()), Variable(torch.zeros(args.batch_size, 1).cuda())
+    #y_real_, y_fake_ = Variable(torch.ones(args.batch_size, 1).cuda()), Variable(torch.zeros(args.batch_size, 1).cuda())
 
 
-    for i_iter in range(1500, args.num_steps):
+    for i_iter in range(args.num_steps):
 
         loss_seg_value = 0
         loss_adv_pred_value = 0
         loss_D_value = 0
-        loss_semi_value = 0
         loss_fm_value = 0
         loss_value = 0
 
@@ -339,68 +338,72 @@ def main():
             pred = interp(model(images))
 
             loss_seg = loss_calc(pred, labels, args.gpu)
-            
-            #fm loss calc
-            try:
-                batch = next(trainloader_all_iter)
-            except:
-                trainloader_iter = iter(trainloader_all)
-                batch = next(trainloader_all_iter)
-            
-            images, labels, _, _ = batch
-            images = Variable(images).cuda(args.gpu)
-            #ignore_mask = (labels.numpy() == 255)
-            pred = interp(model(images))
-            
-            _, D_out_y_pred = model_D(F.softmax(pred))
-            
-            trainloader_gt_iter = iter(trainloader_gt)
-            batch = next(trainloader_gt_iter)
-
-            _, labels_gt, _, _ = batch
-            D_gt_v = Variable(one_hot(labels_gt)).cuda(args.gpu)
-            #ignore_mask_gt = (labels_gt.numpy() == 255)
-            
-            _ , D_out_y_gt = model_D(D_gt_v)
-             
-            fm_loss = torch.mean(torch.abs(torch.mean(D_out_y_gt, 0) - torch.mean(D_out_y_pred, 0)))
-            
-            loss = loss_seg + args.lambda_fm * fm_loss
-
-            # proper normalization
-            loss.backward()
+            loss_seg.backward()
             loss_seg_value += loss_seg.data.cpu().numpy()[0]/args.iter_size
-            loss_fm_value+= fm_loss.data.cpu().numpy()[0]/args.iter_size
-            loss_value += loss.data.cpu().numpy()[0]/args.iter_size
-
-            # train D
-
-            # bring back requires_grad
-            for param in model_D.parameters():
-                param.requires_grad = True
-
-            # train with pred
-            pred = pred.detach()
-
-            D_out_z, _ = model_D(F.softmax(pred))
-            y_fake_ = Variable(torch.zeros(D_out_z.size(0), 1).cuda())
-            loss_D_fake = criterion(D_out_z, y_fake_) 
-
-            # train with gt
-            # get gt labels
-            _, labels_gt, _, _ = batch
-            D_gt_v = Variable(one_hot(labels_gt)).cuda(args.gpu)
-            #ignore_mask_gt = (labels_gt.numpy() == 255)
-
-            D_out_z_gt, _ = model_D(D_gt_v)
-            #D_out = interp(D_out_x)    
-       
-            y_real_ = Variable(torch.ones(D_out_z_gt.size(0), 1).cuda()) 
             
-            loss_D_real = criterion(D_out_z_gt, y_real_)
-            loss_D = loss_D_fake + loss_D_real
-            loss_D.backward()
-            loss_D_value += loss_D.data.cpu().numpy()[0]
+            if i_iter >= args.adv_start:
+                
+                #fm loss calc
+                try:
+                    batch = next(trainloader_all_iter)
+                except:
+                    trainloader_iter = iter(trainloader_all)
+                    batch = next(trainloader_all_iter)
+                
+                images, labels, _, _ = batch
+                images = Variable(images).cuda(args.gpu)
+                #ignore_mask = (labels.numpy() == 255)
+                pred = interp(model(images))
+                
+                _, D_out_y_pred = model_D(F.softmax(pred))
+                
+                trainloader_gt_iter = iter(trainloader_gt)
+                batch = next(trainloader_gt_iter)
+
+                _, labels_gt, _, _ = batch
+                D_gt_v = Variable(one_hot(labels_gt)).cuda(args.gpu)
+                #ignore_mask_gt = (labels_gt.numpy() == 255)
+                
+                _ , D_out_y_gt = model_D(D_gt_v)
+                 
+                fm_loss = torch.mean(torch.abs(torch.mean(D_out_y_gt, 0) - torch.mean(D_out_y_pred, 0)))
+                
+                loss = loss_seg + args.lambda_fm * fm_loss
+
+                # proper normalization
+                fm_loss.backward()
+                #loss_seg_value += loss_seg.data.cpu().numpy()[0]/args.iter_size
+                loss_fm_value+= fm_loss.data.cpu().numpy()[0]/args.iter_size
+                loss_value += loss.data.cpu().numpy()[0]/args.iter_size
+
+                # train D
+
+                # bring back requires_grad
+                for param in model_D.parameters():
+                    param.requires_grad = True
+
+                # train with pred
+                pred = pred.detach()
+
+                D_out_z, _ = model_D(F.softmax(pred))
+                y_fake_ = Variable(torch.zeros(D_out_z.size(0), 1).cuda())
+                loss_D_fake = criterion(D_out_z, y_fake_) 
+
+                # train with gt
+                # get gt labels
+                _, labels_gt, _, _ = batch
+                D_gt_v = Variable(one_hot(labels_gt)).cuda(args.gpu)
+                #ignore_mask_gt = (labels_gt.numpy() == 255)
+
+                D_out_z_gt, _ = model_D(D_gt_v)
+                #D_out = interp(D_out_x)    
+           
+                y_real_ = Variable(torch.ones(D_out_z_gt.size(0), 1).cuda()) 
+                
+                loss_D_real = criterion(D_out_z_gt, y_real_)
+                loss_D = loss_D_fake + loss_D_real
+                loss_D.backward()
+                loss_D_value += loss_D.data.cpu().numpy()[0]
 
         optimizer.step()
         optimizer_D.step()

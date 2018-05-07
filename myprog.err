@@ -1,0 +1,8 @@
+/home/mittal/.bashrc: Zeile 65: bind: Warnung: Zeileneditierung ist nicht aktiviert.
+/home/mittal/.bashrc: Zeile 66: bind: Warnung: Zeileneditierung ist nicht aktiviert.
+/home/mittal/.bashrc: Zeile 65: bind: Warnung: Zeileneditierung ist nicht aktiviert.
+/home/mittal/.bashrc: Zeile 66: bind: Warnung: Zeileneditierung ist nicht aktiviert.
+train_binaryDis_10_lambda.py:367: UserWarning: Implicit dimension choice for softmax has been deprecated. Change the call to include dim=X as an argument.
+  _, D_out_y_pred = model_D(F.softmax(pred))
+train_binaryDis_10_lambda.py:398: UserWarning: Implicit dimension choice for softmax has been deprecated. Change the call to include dim=X as an argument.
+  D_out_z, _ = model_D(F.softmax(pred))

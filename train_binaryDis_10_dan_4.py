@@ -31,28 +31,28 @@ start = timeit.default_timer()
 IMG_MEAN = np.array((104.00698793,116.66876762,122.67891434), dtype=np.float32)
 
 MODEL = 'DeepLab'
-BATCH_SIZE = 6
+BATCH_SIZE = 4
 ITER_SIZE = 1
 NUM_WORKERS = 4
 DATA_DIRECTORY = './dataset/VOC2012'
 DATA_LIST_PATH = './dataset/voc_list/train_aug.txt'
 IGNORE_LABEL = 255
 INPUT_SIZE = '321,321'
-LEARNING_RATE = 2e-5
+LEARNING_RATE = 1e-4
 MOMENTUM = 0.9
 NUM_CLASSES = 21
-NUM_STEPS = 20000
+NUM_STEPS = 40000
 POWER = 0.9
 RANDOM_SEED = 1234
 RESTORE_FROM = 'http://vllab1.ucmerced.edu/~whung/adv-semi-seg/resnet101COCO-41f33a49.pth'
 SAVE_NUM_IMAGES = 2
-SAVE_PRED_EVERY = 500
+SAVE_PRED_EVERY = 100
 SNAPSHOT_DIR = './snapshots/default/'
 WEIGHT_DECAY = 0.0005
 
-LEARNING_RATE_D = 2e-5
+LEARNING_RATE_D = 1e-4
 LAMBDA_ADV_PRED = 0.1
-LAMBDA_FM = 1
+LAMBDA_FM = 0.1
 
 PARTIAL_DATA=0.5
 
@@ -238,10 +238,10 @@ def main():
 
     if args.partial_data is None:
         trainloader = data.DataLoader(train_dataset,
-                        batch_size=args.batch_size, shuffle=True, num_workers=16, pin_memory=True)
+                        batch_size=args.batch_size, shuffle=True, num_workers=5, pin_memory=True)
 
         trainloader_gt = data.DataLoader(train_gt_dataset,
-                        batch_size=args.batch_size, shuffle=True, num_workers=16, pin_memory=True)
+                        batch_size=args.batch_size, shuffle=True, num_workers=5, pin_memory=True)
     else:
         #sample partial data
         partial_size = int(args.partial_data * train_dataset_size)
@@ -256,23 +256,23 @@ def main():
         pickle.dump(train_ids, open(osp.join(args.snapshot_dir, 'train_id.pkl'), 'wb'))
         
         train_sampler_all = data.sampler.SubsetRandomSampler(train_ids)
-        train_gt_sampler_all = data.sampler.SubsetRandomSampler(train_ids)
+        #train_gt_sampler_all = data.sampler.SubsetRandomSampler(train_ids)
         train_sampler = data.sampler.SubsetRandomSampler(train_ids[:partial_size])
-        train_remain_sampler = data.sampler.SubsetRandomSampler(train_ids[partial_size:])
+        #train_remain_sampler = data.sampler.SubsetRandomSampler(train_ids[partial_size:])
         train_gt_sampler = data.sampler.SubsetRandomSampler(train_ids[:partial_size])
 
         trainloader_all = data.DataLoader(train_dataset,
-                        batch_size=args.batch_size, sampler=train_sampler_all, num_workers=16, pin_memory=True)
-        trainloader_gt_all = data.DataLoader(train_gt_dataset,
-                        batch_size=args.batch_size, sampler=train_gt_sampler_all, num_workers=16, pin_memory=True)
+                        batch_size=args.batch_size, sampler=train_sampler_all, num_workers=3, pin_memory=True)
+        #trainloader_gt_all = data.DataLoader(train_gt_dataset,
+                        #batch_size=args.batch_size, sampler=train_gt_sampler_all, num_workers=16, pin_memory=True)
         trainloader = data.DataLoader(train_dataset,
-                        batch_size=args.batch_size, sampler=train_sampler, num_workers=16, pin_memory=True)
-        trainloader_remain = data.DataLoader(train_dataset,
-                        batch_size=args.batch_size, sampler=train_remain_sampler, num_workers=16, pin_memory=True)
+                        batch_size=args.batch_size, sampler=train_sampler, num_workers=3, pin_memory=True)
+        #trainloader_remain = data.DataLoader(train_dataset,
+                        #batch_size=args.batch_size, sampler=train_remain_sampler, num_workers=16, pin_memory=True)
         trainloader_gt = data.DataLoader(train_gt_dataset,
-                        batch_size=args.batch_size, sampler=train_gt_sampler, num_workers=16, pin_memory=True)
+                        batch_size=args.batch_size, sampler=train_gt_sampler, num_workers=3, pin_memory=True)
 
-        trainloader_remain_iter = iter(trainloader_remain)
+        #trainloader_remain_iter = iter(trainloader_remain)
 
 
     trainloader_all_iter = iter(trainloader_all)
@@ -281,7 +281,6 @@ def main():
 
 
     # implement model.optim_parameters(args) to handle different models' lr setting
-
     # optimizer for segmentation network
     optimizer = optim.SGD(model.optim_parameters(args),
                 lr=args.learning_rate, momentum=args.momentum,weight_decay=args.weight_decay)
@@ -303,111 +302,111 @@ def main():
     y_real_, y_fake_ = Variable(torch.ones(args.batch_size, 1).cuda()), Variable(torch.zeros(args.batch_size, 1).cuda())
 
 
-    for i_iter in range(1500, args.num_steps):
+    for i_iter in range( args.num_steps):
 
         loss_seg_value = 0
-        loss_adv_pred_value = 0
+        loss_G_value = 0
         loss_D_value = 0
-        loss_semi_value = 0
-        loss_fm_value = 0
-        loss_value = 0
 
         optimizer.zero_grad()
         adjust_learning_rate(optimizer, i_iter)
         optimizer_D.zero_grad()
         adjust_learning_rate_D(optimizer_D, i_iter)
 
-        for sub_i in range(args.iter_size):
+        # train G
+        # don't accumulate grads in D
+        for param in model_D.parameters():
+            param.requires_grad = False
 
-            # train G
+        # train with source
+        try:
+            batch_l = next(trainloader_iter)
+        except:
+            trainloader_iter = iter(trainloader)
+            batch_l = next(trainloader_iter)           
 
-            # don't accumulate grads in D
-            for param in model_D.parameters():
-                param.requires_grad = False
+        images, labels, _, _ = batch_l
+        images = Variable(images).cuda(args.gpu)
+        pred_l = interp(model(images))
 
-            # train with source
-            
-            try:
-                batch = next(trainloader_iter)
-            except:
-                trainloader_iter = iter(trainloader)
-                batch = next(trainloader_iter)
+        loss_seg = loss_calc(pred_l, labels, args.gpu)
+        #loss_seg.backward() 
 
-            images, labels, _, _ = batch
-            images = Variable(images).cuda(args.gpu)
-            #ignore_mask = (labels.numpy() == 255)
-            pred = interp(model(images))
+        loss_seg_value += loss_seg.data.cpu().numpy()[0]/args.iter_size
 
-            loss_seg = loss_calc(pred, labels, args.gpu)
-            
-            #fm loss calc
-            try:
-                batch = next(trainloader_all_iter)
-            except:
-                trainloader_iter = iter(trainloader_all)
-                batch = next(trainloader_all_iter)
-            
-            images, labels, _, _ = batch
-            images = Variable(images).cuda(args.gpu)
-            #ignore_mask = (labels.numpy() == 255)
-            pred = interp(model(images))
-            
-            _, D_out_y_pred = model_D(F.softmax(pred))
-            
-            trainloader_gt_iter = iter(trainloader_gt)
-            batch = next(trainloader_gt_iter)
-
-            _, labels_gt, _, _ = batch
-            D_gt_v = Variable(one_hot(labels_gt)).cuda(args.gpu)
-            #ignore_mask_gt = (labels_gt.numpy() == 255)
-            
-            _ , D_out_y_gt = model_D(D_gt_v)
-             
-            fm_loss = torch.mean(torch.abs(torch.mean(D_out_y_gt, 0) - torch.mean(D_out_y_pred, 0)))
-            
-            loss = loss_seg + args.lambda_fm * fm_loss
-
-            # proper normalization
-            loss.backward()
-            loss_seg_value += loss_seg.data.cpu().numpy()[0]/args.iter_size
-            loss_fm_value+= fm_loss.data.cpu().numpy()[0]/args.iter_size
-            loss_value += loss.data.cpu().numpy()[0]/args.iter_size
-
-            # train D
-
-            # bring back requires_grad
-            for param in model_D.parameters():
-                param.requires_grad = True
-
-            # train with pred
-            pred = pred.detach()
-
-            D_out_z, _ = model_D(F.softmax(pred))
-            y_fake_ = Variable(torch.zeros(D_out_z.size(0), 1).cuda())
-            loss_D_fake = criterion(D_out_z, y_fake_) 
-
-            # train with gt
-            # get gt labels
-            _, labels_gt, _, _ = batch
-            D_gt_v = Variable(one_hot(labels_gt)).cuda(args.gpu)
-            #ignore_mask_gt = (labels_gt.numpy() == 255)
-
-            D_out_z_gt, _ = model_D(D_gt_v)
-            #D_out = interp(D_out_x)    
+        try:
+            batch_all = next(trainloader_all_iter)
+        except:
+            trainloader_all_iter = iter(trainloader_all)
+            batch_all = next(trainloader_all_iter)
+        
+        images, _, _, _ = batch_all
+        images = Variable(images).cuda(args.gpu)
+        pred = interp(model(images))
        
-            y_real_ = Variable(torch.ones(D_out_z_gt.size(0), 1).cuda()) 
-            
-            loss_D_real = criterion(D_out_z_gt, y_real_)
-            loss_D = loss_D_fake + loss_D_real
-            loss_D.backward()
-            loss_D_value += loss_D.data.cpu().numpy()[0]
+        ''' 
+        #output of modelD for predictions
+        pred_mul = torch.Tensor(images.size(0), 63, 321, 321)
+        pred_mul = Variable(pred_mul).cuda(args.gpu) 
+        for k in range(21):
+            for l in range(3):
+                pred_mul[:, k*3+l, :, :] = pred[:, k, :, :]*images[:, l, :, :]
+        '''
+        D_out_z_pred, D_out_y_pred = model_D(F.softmax(pred))
+        
+        #output of modelD for ground truth
+        try:
+            batch_gt = next(trainloader_gt_iter)
+        except:
+            trainloader_gt_iter = iter(trainloader_gt)
+            batch_gt = next(trainloader_gt_iter) 
+        
+        images_gt, labels_gt, _, _ = batch_gt
+        D_gt_v = Variable(one_hot(labels_gt)).cuda(args.gpu)
+        images_gt = Variable(images_gt).cuda(args.gpu)
+        
+        '''    
+        D_gt_v_mul = torch.Tensor(images_gt.size(0), 63, 321, 321).cuda(args.gpu)
+        D_gt_v_mul = Variable(D_gt_v_mul).cuda(args.gpu) 
+
+        for k in range(21):
+            for l in range(3):
+                D_gt_v_mul[:, k*3+l, :, :] = D_gt_v[:, k, :, :]*images_gt[:, l, :, :]
+        '''
+        D_out_z_gt , D_out_y_gt = model_D(F.softmax(D_gt_v))
+         
+        #fm_loss = torch.mean(torch.abs(torch.mean(D_out_y_gt, 0) - torch.mean(D_out_y_pred, 0)))
+        y_fake_adv = Variable(torch.ones(D_out_z_pred.size(0), 1).cuda())
+        adv_loss = criterion(D_out_z_pred, y_fake_adv)
+        
+        loss_g = loss_seg + adv_loss
+
+        # proper normalization
+        loss_g.backward(retain_variables=True)
+        #loss_adv_value+= adv_loss.data.cpu().numpy()[0]/args.iter_size
+        loss_G_value += loss_g.data.cpu().numpy()[0]/args.iter_size
+
+        # train D
+        # bring back requires_grad
+        for param in model_D.parameters():
+            param.requires_grad = True
+
+        y_fake_ = Variable(torch.zeros(D_out_z_pred.size(0), 1).cuda())
+        loss_D_fake = criterion(D_out_z_pred, y_fake_) 
+
+        y_real_ = Variable(torch.ones(D_out_z_gt.size(0), 1).cuda()) 
+        loss_D_real = criterion(D_out_z_gt, y_real_)
+        
+        loss_D = loss_D_fake + loss_D_real
+        loss_D.backward()
+        loss_D_value += loss_D.data.cpu().numpy()[0]
 
         optimizer.step()
         optimizer_D.step()
 
         print('exp = {}'.format(args.snapshot_dir))
-        print('iter = {0:8d}/{1:8d}, loss_seg = {2:.3f}, loss_D = {3:.3f}'.format(i_iter, args.num_steps, loss_seg_value, loss_D_value))
-        print ('fm_loss: ', loss_fm_value, ' g_loss: ', loss_value)
+        print('iter = {0:8d}/{1:8d}, loss_seg = {2:.3f}, loss_D = {3:.3f}, loss_G = {4:.3f}'.format(i_iter, args.num_steps, loss_seg_value, loss_D_value, loss_G_value))
+        #print ('fm_loss: ', loss_fm_value, ' g_loss: ', loss_value)
 
         if i_iter >= args.num_steps-1:
             print ('save model ...')
